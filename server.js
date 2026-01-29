@@ -9,18 +9,13 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: true }))
 
 async function getTomTomRoute(pickup, destination) {
-  // Build query string with truck-aware params
   const params = new URLSearchParams({
     key: process.env.TOMTOM_API_KEY,
-    travelMode: 'truck',              // ← This is the key one for truck routing
-    vehicleCommercial: 'true',        // Marks as commercial vehicle
-    instructionsTyoe: 'text',
-    // Optional but recommended for realism (add these later when form sends them)
-    // vehicleWeight: '15000',        // example: 15 tons in kg
-    // vehicleLength: '12',           // example: standard container/trailer length
-    // vehicleHeight: '4',            // example
-    // vehicleWidth: '2.5',
-    // vehicleLoadType: 'OTHER_GENERAL_CARGO',  // or OTHER_HAZMAT_GENERAL etc.
+    travelMode: 'truck',
+    vehicleCommercial: 'true',
+    // Add this line to request FULL geometry (optional but recommended)
+    instructionsType: 'text',          // or 'none' if you don't need turn-by-turn
+    // sectionType: 'traffic',         // optional, if you want traffic sections
   });
 
   const url = `https://api.tomtom.com/routing/1/calculateRoute/${pickup.lat},${pickup.lng}:${destination.lat},${destination.lng}/json?${params.toString()}`;
@@ -28,23 +23,27 @@ async function getTomTomRoute(pickup, destination) {
   try {
     const response = await axios.get(url);
     
-    // Safety check in case no routes returned
     if (!response.data.routes || response.data.routes.length === 0) {
       throw new Error('No route found');
     }
 
-    const route = response.data.routes[0]; // Best/fastest route by default
+    const route = response.data.routes[0];
+    const leg = route.legs[0];  // Usually the only leg for direct origin-destination
+
+    // Option A: Use points array (array of {latitude, longitude})
+    const points = leg.points || [];  // This is [{latitude: ..., longitude: ...}, ...]
+
+    // Option B: If you prefer encoded string later (see below)
+    // const encodedPolyline = leg.polyline || '';  // Not always present
 
     return {
       distanceKm: route.summary.lengthInMeters / 1000,
       etaMinutes: route.summary.travelTimeInSeconds / 60,
-      polyline: route.sections?.[0]?.polyline || ''  // Encoded polyline (TomTom format)
+      routePoints: points,               // ← Change to this (array format)
+      // polyline: encodedPolyline       // only if you enable encoded below
     };
   } catch (error) {
     console.error('TomTom error details:', error.response?.data || error.message);
-    if (error.response?.data?.detailedError) {
-      console.error('TomTom detailed error:', error.response.data.detailedError);
-    }
     return null;
   }
 }
@@ -64,12 +63,12 @@ app.post('/calculate-route', async (req, res) => {
   
   const approxCost = route.distanceKm * 100; // Mock cost: 100 Naira/km
   
-  res.json({
-    routePolyline: route.polyline,
-    distanceKm: route.distanceKm,
-    etaMinutes: route.etaMinutes,
-    approxCost
-  });
+res.json({
+  routePoints: route.routePoints,     // array of {latitude, longitude}
+  distanceKm: route.distanceKm,
+  etaMinutes: route.etaMinutes,
+  approxCost
+});
 });
 
 app.listen(port, () => {
