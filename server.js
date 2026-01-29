@@ -3,10 +3,13 @@ const express = require('express');
 const axios = require('axios');
 
 const app = express();
-const port = 3000;
+const port = 5000;
 
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }))
+
+const cors = require('cors');
+app.use(cors({ origin: 'http://localhost:3000' }));
 
 async function getTomTomRoute(pickup, destination) {
   const params = new URLSearchParams({
